@@ -126,13 +126,11 @@ function tuning_update!(tuner::ProposalCovTuner, chain::MHIterator, samples::Den
     else
         chain.info = MCMCIteratorInfo(chain.info, tuned = false)
         @debug "MCMC chain $(chain.info.id) *not* tuned, acceptance ratio = $(Float32(α)), proposal scale = $(Float32(c)), max. log posterior = $(Float32(max_log_posterior))"
-
-        if α > α_max && c < c_max
-            tuner.scale = c * β
-        elseif α < α_min && c > c_min
-            tuner.scale = c / β
-        end
     end
+
+    c_new = c * _mh_proposal_rescale_factor(α, α_min, α_max, β)
+
+    tuner.scale = clamp(c_new, c_min, c_max)
 
     Σ_new = new_Σ_unscal * tuner.scale
 
@@ -140,4 +138,22 @@ function tuning_update!(tuner::ProposalCovTuner, chain::MHIterator, samples::Den
     tuner.iteration += 1
 
     nothing
+end
+
+
+function _mh_proposal_rescale_factor(α, α_min, α_max, β)
+    @argcheck zero(α) <= α <= one(α)
+    T = typeof(α)
+
+    α_trg = (α_max + α_min) / 2
+
+    r = if α > α_max
+        ((α - α_max) / (one(T) - α_max) + 1) * β
+    elseif α > α_trg
+        ((α - α_trg) / (α_max - α_trg)) * (β - 1) + 1
+    elseif α > α_min
+        1 / (((α_trg - α) / (α_trg - α_min)) * (β - 1) + 1)
+    else
+        1 / (((α_min - α) / (α_min - zero(T)) + 1) * β)
+    end
 end
